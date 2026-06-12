@@ -40,3 +40,16 @@ def test_mcp_mounted(client: TestClient):
     # el endpoint MCP HTTP responde (406/400 sin handshake correcto, pero no 404)
     res = client.post("/mcp/", json={})
     assert res.status_code != 404
+
+
+def test_basic_auth_when_password_set(
+    vault_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("SHAREDBRAIN_PASSWORD", "secreta")
+    config = Config(vault=vault_dir, ai_dir="_ai", db=tmp_path / "runs.sqlite3")
+    with TestClient(build_app(config)) as c:
+        assert c.get("/api/ideas").status_code == 401
+        assert c.post("/mcp/", json={}).status_code == 401
+        ok = c.get("/api/ideas", auth=("cualquiera", "secreta"))
+        assert ok.status_code == 200
+        assert c.get("/api/ideas", auth=("x", "mala")).status_code == 401

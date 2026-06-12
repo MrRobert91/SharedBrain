@@ -16,8 +16,13 @@ COPY src/ src/
 COPY --from=frontend /out/static src/sharedbrain/static
 RUN pip install --no-cache-dir .
 
-# config y BD viven en /data; el vault se monta en /vault
-ENV SHAREDBRAIN_CONFIG=/data/sharedbrain.config.yaml
+# Defaults pensados para contenedor suelto (Sliplane, VPS): el vault vive en
+# el volumen /vault y la BD de actividad en /data. Todo es sobreescribible
+# por variables de entorno; no hace falta archivo de config.
+ENV SHAREDBRAIN_VAULT=/vault \
+    SHAREDBRAIN_DB=/data/sharedbrain.sqlite3 \
+    SHAREDBRAIN_CONFIG=/data/sharedbrain.config.yaml
+RUN mkdir -p /data /vault
 WORKDIR /data
 EXPOSE 8765
 CMD ["sharedbrain", "serve", "--web", "--host", "0.0.0.0", "--port", "8765"]

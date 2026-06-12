@@ -50,6 +50,13 @@ export default function App() {
             </button>
           ))}
         </nav>
+        <button
+          className="tab"
+          title="Commit local + pull + push del repo del vault"
+          onClick={() => action("vault sync", () => api.post("/api/vault/sync"))}
+        >
+          🔄 Sync vault
+        </button>
       </header>
       {busy && <div className="banner busy">⏳ Ejecutando {busy}… (puede tardar)</div>}
       {error && (

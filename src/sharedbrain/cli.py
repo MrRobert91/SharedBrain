@@ -180,6 +180,20 @@ def pack_create(task: str = typer.Argument(..., help="Descripción de la tarea")
     typer.secho(f"Pack: {written[0]}", fg="green")
 
 
+@app.command("vault-sync")
+def vault_sync() -> None:
+    """Sincroniza el vault con su repo git: commit local, pull --rebase, push."""
+    from .gitsync import GitSyncError, sync_vault
+
+    config = _load_config()
+    try:
+        for action in sync_vault(config):
+            typer.secho(f"  {action}", fg="green")
+    except GitSyncError as e:
+        typer.secho(str(e), fg="red", err=True)
+        raise typer.Exit(1) from e
+
+
 @app.command("project-sync")
 def project_sync(
     origin: str = typer.Argument(..., help="Ruta local o owner/repo de GitHub"),

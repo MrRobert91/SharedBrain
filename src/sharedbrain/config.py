@@ -30,6 +30,10 @@ class ProjectConfig(BaseModel):
 
 class Config(BaseModel):
     vault: Path
+    # repo git del vault (owner/repo o URL); si se define, el vault se clona
+    # en el primer arranque y `vault sync` lo mantiene al día
+    vault_repo: str | None = None
+    vault_branch: str | None = None
     ai_dir: str = "_ai"
     db: Path = Path("sharedbrain.sqlite3")  # estado operativo (actividad del panel)
     models: ModelsConfig = Field(default_factory=ModelsConfig)
@@ -63,11 +67,38 @@ class Config(BaseModel):
 
     @classmethod
     def load(cls, explicit: Path | None = None) -> Config:
+        """Carga el YAML y aplica overrides por variables de entorno.
+
+        Las variables de entorno permiten desplegar sin archivo de config
+        (p. ej. un contenedor suelto en Sliplane): con SHAREDBRAIN_VAULT
+        definido, el YAML es opcional.
+        """
         path = cls.find_config_file(explicit)
-        if path is None:
+        data: dict = {}
+        if path is not None:
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
+        env = os.environ
+        if vault := env.get("SHAREDBRAIN_VAULT"):
+            data["vault"] = vault
+        if vault_repo := env.get("SHAREDBRAIN_VAULT_REPO"):
+            data["vault_repo"] = vault_repo
+        if vault_branch := env.get("SHAREDBRAIN_VAULT_BRANCH"):
+            data["vault_branch"] = vault_branch
+        if ai_dir := env.get("SHAREDBRAIN_AI_DIR"):
+            data["ai_dir"] = ai_dir
+        if db := env.get("SHAREDBRAIN_DB"):
+            data["db"] = db
+        models = data.setdefault("models", {})
+        if isinstance(models, dict):
+            if model := env.get("SHAREDBRAIN_MODEL"):
+                models["default"] = model
+            if cheap := env.get("SHAREDBRAIN_MODEL_CHEAP"):
+                models["cheap"] = cheap
+
+        if "vault" not in data:
             raise FileNotFoundError(
-                f"No se encontró {CONFIG_FILENAME}. Crea uno con `sharedbrain init <vault>` "
-                f"o define {CONFIG_ENV_VAR}."
+                f"No se encontró {CONFIG_FILENAME} ni la variable SHAREDBRAIN_VAULT. "
+                f"Crea la config con `sharedbrain init <vault>` o define SHAREDBRAIN_VAULT."
             )
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         return cls.model_validate(data)

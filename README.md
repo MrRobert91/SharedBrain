@@ -57,6 +57,57 @@ docker compose up -d        # panel en http://localhost:8765
 El agente se conecta por MCP a `http://localhost:8765/mcp/` (HTTP) o vía
 stdio con `sharedbrain serve`. `GITHUB_TOKEN` habilita leer repos privados.
 
+## Despliegue en Sliplane (contenedor suelto, sin compose)
+
+La imagen funciona sin archivo de config: todo se define por variables de
+entorno. Servicio desde este repo (Dockerfile en la raíz), puerto **8765**.
+
+**Variables de entorno:**
+
+| Variable | Obligatoria | Valor |
+| --- | --- | --- |
+| `SHAREDBRAIN_PASSWORD` | ✅ (expuesto a internet) | Contraseña: panel, API y MCP exigen Basic Auth |
+| `OPENROUTER_API_KEY` / `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | ✅ la del proveedor que uses | Clave de API |
+| `SHAREDBRAIN_VAULT_REPO` | ✅ si tu vault vive en git | `owner/repo` o URL; se clona en `/vault` en el primer arranque |
+| `GITHUB_TOKEN` | ✅ si el repo del vault es privado | También habilita `project-sync` de repos privados |
+| `SHAREDBRAIN_MODEL` | recomendada | `openrouter:anthropic/claude-sonnet-4.6`, `anthropic:claude-fable-5`, `openai:gpt-5.2`… |
+| `SHAREDBRAIN_MODEL_CHEAP` | no | Modelo barato para tareas menores |
+| `SHAREDBRAIN_VAULT_BRANCH` | no | Rama del repo del vault (default: la principal) |
+| `SHAREDBRAIN_VAULT` | no | Default `/vault` (ya fijado en la imagen) |
+| `SHAREDBRAIN_DB` | no | Default `/data/sharedbrain.sqlite3` |
+
+**Volúmenes persistentes:**
+
+| Ruta en contenedor | Contenido |
+| --- | --- |
+| `/vault` | El vault (notas + zona `_ai/`). Imprescindible. |
+| `/data` | SQLite de actividad. Prescindible (solo pierdes el historial del panel). |
+
+Si Sliplane solo permite un volumen por servicio, monta uno en `/vault` y
+define `SHAREDBRAIN_DB=/vault/.sharedbrain/sharedbrain.sqlite3`.
+
+**El vault en el servidor:** con `SHAREDBRAIN_VAULT_REPO` definido, el
+contenedor clona tu repo (con `GITHUB_TOKEN` si es privado) en el primer
+arranque. Después, `vault sync` (botón 🔄 del panel o `sharedbrain
+vault-sync`) hace commit de los cambios locales —las ideas y contexto
+generados en el servidor—, `pull --rebase` y `push`, de modo que todo vuelve
+a tu repo y aparece en tu Obsidian local al hacer pull. El token se inyecta
+por invocación de git y nunca se escribe en el volumen.
+
+El panel y el MCP quedan en `https://tu-app.sliplane.app` y
+`https://tu-app.sliplane.app/mcp/` (con `Authorization: Basic …`).
+
+## Selección de modelo
+
+Formato pydantic-ai `proveedor:modelo` — en `sharedbrain.config.yaml`
+(`models.default` / `models.cheap`) o por entorno (`SHAREDBRAIN_MODEL`,
+`SHAREDBRAIN_MODEL_CHEAP`, que tienen prioridad sobre el YAML):
+
+- `anthropic:claude-fable-5` (requiere `ANTHROPIC_API_KEY`)
+- `openai:gpt-5.2` (requiere `OPENAI_API_KEY`)
+- `openrouter:<cualquier-modelo-de-openrouter.ai/models>` (requiere `OPENROUTER_API_KEY`)
+- También: `google-gla:`, `groq:`, `mistral:`… (proveedores de pydantic-ai)
+
 ## Estado
 
 ✅ MVP implementado (fases 1–5 de [docs/02-mvp.md](docs/02-mvp.md)).

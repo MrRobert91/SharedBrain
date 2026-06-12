@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import os
+import secrets
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -38,6 +41,11 @@ class SyncRequest(BaseModel):
 
 
 def build_app(config: Config) -> FastAPI:
+    # primer arranque en un servidor: clonar el vault si está configurado como repo
+    from .gitsync import ensure_vault
+
+    ensure_vault(config)
+    config.vault.mkdir(parents=True, exist_ok=True)
     vault = Vault(config.vault, config.ai_dir)
     runlog = RunLog(config.db)
 
@@ -45,6 +53,29 @@ def build_app(config: Config) -> FastAPI:
     mcp_app = build_server(config).http_app(path="/")
     app = FastAPI(title="SharedBrain", version="0.1.0", lifespan=mcp_app.lifespan)
     app.mount("/mcp", mcp_app)
+
+    # Auth opcional para despliegues expuestos (Sliplane, VPS...): si
+    # SHAREDBRAIN_PASSWORD está definida, todo (panel, API, MCP) exige
+    # Basic Auth (cualquier usuario + esa contraseña).
+    if password := os.environ.get("SHAREDBRAIN_PASSWORD"):
+
+        @app.middleware("http")
+        async def basic_auth(request: Request, call_next):
+            header = request.headers.get("authorization", "")
+            ok = False
+            if header.startswith("Basic "):
+                try:
+                    decoded = base64.b64decode(header[6:]).decode()
+                    _, _, given = decoded.partition(":")
+                    ok = secrets.compare_digest(given, password)
+                except Exception:
+                    ok = False
+            if not ok:
+                return Response(
+                    status_code=401,
+                    headers={"WWW-Authenticate": 'Basic realm="SharedBrain"'},
+                )
+            return await call_next(request)
 
     async def _run(pipeline: str, args: dict, coro):
         if _pipeline_lock.locked():
@@ -156,6 +187,20 @@ def build_app(config: Config) -> FastAPI:
         from .pipelines.packs import create_pack
         written = await _run("packs.create", {"task": req.task}, create_pack(config, req.task))
         return {"written": written}
+
+    @app.post("/api/vault/sync")
+    async def api_vault_sync() -> dict:
+        from .gitsync import GitSyncError, sync_vault
+
+        def _sync():
+            try:
+                return sync_vault(config)
+            except GitSyncError as e:
+                raise HTTPException(500, str(e)) from e
+
+        # git es bloqueante: fuera del event loop
+        actions = await asyncio.to_thread(_sync)
+        return {"written": actions}
 
     @app.post("/api/projects/sync")
     async def api_projects_sync(req: SyncRequest) -> dict:
