@@ -1,0 +1,15 @@
+services:
+  sharedbrain:
+    build: .
+    ports:
+      - "8765:8765"
+    volumes:
+      # tu vault de Obsidian (lectura/escritura: la zona _ai/ vive dentro)
+      - ${VAULT_PATH:?Define VAULT_PATH en .env apuntando a tu vault}:/vault
+      # config + sqlite persistentes
+      - ./data:/data
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+    restart: unless-stopped

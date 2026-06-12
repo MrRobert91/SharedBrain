@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+sharedbrain.config.yaml
+.env
+*.sqlite3
+node_modules/
+src/sharedbrain/static/
+data/
