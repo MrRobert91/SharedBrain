@@ -87,6 +87,33 @@ def ensure_vault(config: Config) -> str | None:
     return f"clonado {config.vault_repo} en {vault}"
 
 
+def vault_status(config: Config) -> dict:
+    """Estado de sincronización del vault para el panel. Nunca lanza: si algo
+    falla devuelve lo que pueda con un campo error."""
+    vault = config.vault
+    status: dict = {
+        "repo": config.vault_repo,
+        "is_git": is_git_repo(vault) if vault.exists() else False,
+        "branch": None,
+        "dirty_files": 0,
+        "last_commit": None,
+        "error": None,
+    }
+    if not status["is_git"]:
+        return status
+    try:
+        status["branch"] = _git(["branch", "--show-current"], cwd=vault) or "(detached)"
+        porcelain = _git(["status", "--porcelain"], cwd=vault)
+        status["dirty_files"] = len(porcelain.splitlines()) if porcelain else 0
+        log = _git(["log", "-1", "--pretty=%h|%ad|%s", "--date=iso-strict"], cwd=vault)
+        if log:
+            sha, date, msg = log.split("|", 2)
+            status["last_commit"] = {"sha": sha, "date": date, "message": msg}
+    except GitSyncError as e:
+        status["error"] = str(e)
+    return status
+
+
 def sync_vault(config: Config) -> list[str]:
     """Commit de cambios locales (zona IA), pull --rebase y push.
     Devuelve un resumen de las acciones realizadas."""

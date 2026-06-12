@@ -95,6 +95,7 @@ def render_idea(card: IdeaCard) -> tuple[str, dict]:
     for attr, heading in SECTION_ORDER:
         parts.append(f"\n## {heading}\n\n{getattr(card, attr).strip()}")
     parts.append("\n## Crítica\n\n_Pendiente. Genérala con `sharedbrain ideas critique <slug>`._")
+    parts.append(f"\n## {USER_NOTES_HEADING}\n\n_Añade aquí (o desde el panel) tu feedback para mejorar la idea._")
     parts.append("\n## Veredicto\n\n_Lo decides tú: edita `verdict` en el frontmatter._")
     body = "\n".join(parts) + "\n"
     fm = {
@@ -128,6 +129,26 @@ def render_critique(critique: IdeaCritique) -> str:
         else:
             out.append(text.strip())
     return "\n\n".join(out) + "\n"
+
+
+USER_NOTES_HEADING = "Notas del usuario"
+
+
+def get_section(body: str, heading: str) -> str:
+    """Devuelve el contenido de una sección `## heading` (sin el encabezado)."""
+    pattern = re.compile(rf"^## {re.escape(heading)}\s*\n(.*?)(?=^## |\Z)", re.M | re.S)
+    m = pattern.search(body)
+    return m.group(1).strip() if m else ""
+
+
+def append_user_note(body: str, text: str, date: str) -> str:
+    """Añade una nota del usuario (feedback humano) a la ficha de idea."""
+    existing = get_section(body, USER_NOTES_HEADING)
+    if existing.startswith("_Añade aquí"):  # placeholder inicial
+        existing = ""
+    entry = f"- **{date}**: {text.strip()}"
+    content = f"{existing}\n{entry}".strip() if existing else entry
+    return replace_section(body, USER_NOTES_HEADING, content)
 
 
 def replace_section(body: str, heading: str, new_content: str) -> str:

@@ -122,6 +122,7 @@ def _run_pipeline(pipeline: str, args: dict, coro) -> list[str]:
 def ideas_generate(
     goal: str = typer.Option(None, help="monetización | marca-personal | educación | investigación | aprendizaje"),
     horizon: str = typer.Option(None, help="corto | medio | largo"),
+    objetivo: str = typer.Option(None, help="Objetivo específico en texto libre (prioritario)"),
     from_note: str = typer.Option(None, "--from", help="Ruta de una nota con una idea de partida"),
     n: int = typer.Option(5, help="Número máximo de ideas"),
 ) -> None:
@@ -131,11 +132,22 @@ def ideas_generate(
     config = _load_config()
     typer.echo(f"Generando ideas con {config.models.default}...")
     written = _run_pipeline(
-        "ideas.generate", {"goal": goal, "horizon": horizon, "n": n},
-        generate_ideas(config, goal=goal, horizon=horizon, from_note=from_note, n=n),
+        "ideas.generate", {"goal": goal, "horizon": horizon, "custom_goal": objetivo, "n": n},
+        generate_ideas(config, goal=goal, horizon=horizon, custom_goal=objetivo,
+                       from_note=from_note, n=n),
     )
     for path in written:
         typer.secho(f"  idea: {path}", fg="green")
+
+
+@ideas_app.command("rebuild")
+def ideas_rebuild(slug: str) -> None:
+    """Regenera una idea incorporando tus notas de feedback."""
+    from .pipelines.ideas import rebuild_idea
+
+    config = _load_config()
+    written = _run_pipeline("ideas.rebuild", {"slug": slug}, rebuild_idea(config, slug))
+    typer.secho(f"Idea regenerada: {written[0]}", fg="green")
 
 
 @ideas_app.command("critique")

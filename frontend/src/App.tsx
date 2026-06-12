@@ -1,323 +1,176 @@
-import { useCallback, useEffect, useState } from "react";
-import { api, Idea, Pack, ProfileSection, Project, Run } from "./api";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { api, VaultStatus } from "./api";
+import { Badge, Spinner, timeAgo } from "./ui";
+import { Dashboard } from "./views/Dashboard";
+import { Ideas } from "./views/Ideas";
+import { Notes } from "./views/Notes";
+import { Projects } from "./views/Projects";
+import { Packs } from "./views/Packs";
+import { Profile } from "./views/Profile";
+import { Activity } from "./views/Activity";
 
-type Tab = "ideas" | "proyectos" | "packs" | "perfil" | "actividad";
+type Tab = "dashboard" | "ideas" | "proyectos" | "notas" | "packs" | "perfil" | "actividad";
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: "ideas", label: "Ideas" },
-  { id: "proyectos", label: "Proyectos" },
-  { id: "packs", label: "Packs" },
-  { id: "perfil", label: "Perfil" },
-  { id: "actividad", label: "Actividad" },
+const NAV: { id: Tab; icon: string; label: string }[] = [
+  { id: "dashboard", icon: "◉", label: "Dashboard" },
+  { id: "ideas", icon: "✦", label: "Ideas" },
+  { id: "proyectos", icon: "▣", label: "Proyectos" },
+  { id: "notas", icon: "✎", label: "Notas" },
+  { id: "packs", icon: "⧉", label: "Packs" },
+  { id: "perfil", icon: "◈", label: "Perfil" },
+  { id: "actividad", icon: "↺", label: "Actividad" },
 ];
 
-export default function App() {
-  const [tab, setTab] = useState<Tab>("ideas");
-  const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
+interface Toast {
+  id: number;
+  kind: "ok" | "error";
+  text: string;
+}
 
-  const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
+interface AppContextValue {
+  /** Lanza una acción del backend con toasts y refresco global. */
+  action: (label: string, fn: () => Promise<unknown>) => Promise<boolean>;
+  busy: string | null;
+  refreshKey: number;
+  goTo: (tab: Tab) => void;
+}
+
+const AppContext = createContext<AppContextValue>(null!);
+export const useApp = () => useContext(AppContext);
+
+export default function App() {
+  const [tab, setTab] = useState<Tab>("dashboard");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [vault, setVault] = useState<VaultStatus | null>(null);
+
+  const toast = useCallback((kind: Toast["kind"], text: string) => {
+    const id = Date.now() + Math.random();
+    setToasts((t) => [...t, { id, kind, text }]);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), kind === "ok" ? 5000 : 10000);
+  }, []);
+
+  const refreshVault = useCallback(() => {
+    api.vaultStatus().then(setVault).catch(() => setVault(null));
+  }, []);
+
+  useEffect(() => {
+    refreshVault();
+    const interval = setInterval(refreshVault, 60_000);
+    return () => clearInterval(interval);
+  }, [refreshVault, refreshKey]);
 
   const action = useCallback(
-    async (label: string, fn: () => Promise<unknown>) => {
+    async (label: string, fn: () => Promise<unknown>): Promise<boolean> => {
       setBusy(label);
-      setError(null);
       try {
         await fn();
-        refresh();
+        toast("ok", `${label}: completado`);
+        setRefreshKey((k) => k + 1);
+        return true;
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+        toast("error", `${label}: ${e instanceof Error ? e.message : e}`);
+        return false;
       } finally {
         setBusy(null);
       }
     },
-    [refresh],
+    [toast],
   );
 
+  const ctx: AppContextValue = { action, busy, refreshKey, goTo: setTab };
+
   return (
-    <div className="app">
-      <header>
-        <h1>🧠 SharedBrain</h1>
-        <nav>
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              className={tab === t.id ? "tab active" : "tab"}
-              onClick={() => setTab(t.id)}
-            >
-              {t.label}
-            </button>
-          ))}
-        </nav>
-        <button
-          className="tab"
-          title="Commit local + pull + push del repo del vault"
-          onClick={() => action("vault sync", () => api.post("/api/vault/sync"))}
-        >
-          🔄 Sync vault
-        </button>
-      </header>
-      {busy && <div className="banner busy">⏳ Ejecutando {busy}… (puede tardar)</div>}
-      {error && (
-        <div className="banner error" onClick={() => setError(null)}>
-          ⚠️ {error}
+    <AppContext.Provider value={ctx}>
+      <div className="layout">
+        <aside className="sidebar">
+          <div className="brand">
+            <span className="brand-icon">🧠</span> SharedBrain
+          </div>
+          <nav>
+            {NAV.map((item) => (
+              <button
+                key={item.id}
+                className={tab === item.id ? "nav-item active" : "nav-item"}
+                onClick={() => setTab(item.id)}
+              >
+                <span className="nav-icon">{item.icon}</span> {item.label}
+              </button>
+            ))}
+          </nav>
+          <VaultPanel vault={vault} />
+        </aside>
+
+        <div className="main-col">
+          {busy && (
+            <div className="busy-bar">
+              <Spinner small /> Ejecutando <strong>{busy}</strong>… los pipelines con LLM pueden
+              tardar uno o dos minutos.
+            </div>
+          )}
+          <main className="content">
+            {tab === "dashboard" && <Dashboard />}
+            {tab === "ideas" && <Ideas />}
+            {tab === "proyectos" && <Projects />}
+            {tab === "notas" && <Notes />}
+            {tab === "packs" && <Packs />}
+            {tab === "perfil" && <Profile />}
+            {tab === "actividad" && <Activity />}
+          </main>
         </div>
-      )}
-      <main>
-        {tab === "ideas" && <IdeasView action={action} refreshKey={refreshKey} />}
-        {tab === "proyectos" && <ProjectsView action={action} refreshKey={refreshKey} />}
-        {tab === "packs" && <PacksView action={action} refreshKey={refreshKey} />}
-        {tab === "perfil" && <ProfileView action={action} refreshKey={refreshKey} />}
-        {tab === "actividad" && <RunsView refreshKey={refreshKey} />}
-      </main>
-    </div>
-  );
-}
 
-interface ViewProps {
-  action: (label: string, fn: () => Promise<unknown>) => Promise<void>;
-  refreshKey: number;
-}
-
-function useData<T>(loader: () => Promise<T>, refreshKey: number): T | null {
-  const [data, setData] = useState<T | null>(null);
-  useEffect(() => {
-    loader().then(setData).catch(() => setData(null));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshKey]);
-  return data;
-}
-
-function Markdown({ text }: { text: string }) {
-  return <pre className="md">{text}</pre>;
-}
-
-function IdeasView({ action, refreshKey }: ViewProps) {
-  const ideas = useData(api.ideas, refreshKey);
-  const [goal, setGoal] = useState("");
-  const [horizon, setHorizon] = useState("");
-  const [open, setOpen] = useState<string | null>(null);
-
-  return (
-    <section>
-      <form
-        className="toolbar"
-        onSubmit={(e) => {
-          e.preventDefault();
-          action("ideas generate", () =>
-            api.post("/api/ideas/generate", {
-              goal: goal || null,
-              horizon: horizon || null,
-              n: 5,
-            }),
-          );
-        }}
-      >
-        <select value={goal} onChange={(e) => setGoal(e.target.value)}>
-          <option value="">objetivo (cualquiera)</option>
-          {["monetización", "marca-personal", "educación", "investigación", "aprendizaje"].map(
-            (g) => (
-              <option key={g}>{g}</option>
-            ),
-          )}
-        </select>
-        <select value={horizon} onChange={(e) => setHorizon(e.target.value)}>
-          <option value="">horizonte (cualquiera)</option>
-          {["corto", "medio", "largo"].map((h) => (
-            <option key={h}>{h}</option>
+        <div className="toasts">
+          {toasts.map((t) => (
+            <div key={t.id} className={`toast ${t.kind}`} onClick={() => setToasts((x) => x.filter((y) => y.id !== t.id))}>
+              {t.kind === "ok" ? "✓" : "✕"} {t.text}
+            </div>
           ))}
-        </select>
-        <button type="submit">✨ Generar ideas</button>
-      </form>
-      {!ideas?.length && <p className="empty">No hay ideas todavía. Genera las primeras.</p>}
-      {ideas?.map((idea: Idea) => (
-        <article key={idea.slug} className="card">
-          <div className="card-head" onClick={() => setOpen(open === idea.slug ? null : idea.slug)}>
-            <strong>{idea.title}</strong>
-            <span className="meta">
-              {idea.goal} · {idea.horizon} · esfuerzo {idea.effort} · impacto {idea.impact} · fit{" "}
-              {idea.fit} ·{" "}
-              <em className={`verdict v-${idea.verdict}`}>
-                {idea.verdict}
-                {idea.verdict_sugerido ? ` (sugerido: ${idea.verdict_sugerido})` : ""}
-              </em>
-            </span>
-          </div>
-          {open === idea.slug && (
-            <div className="card-body">
-              <div className="actions">
-                <button
-                  onClick={() =>
-                    action(`critique ${idea.slug}`, () =>
-                      api.post(`/api/ideas/${idea.slug}/critique`),
-                    )
-                  }
-                >
-                  🥊 Criticar
-                </button>
-                <button
-                  onClick={() =>
-                    action(`promote ${idea.slug}`, () =>
-                      api.post(`/api/ideas/${idea.slug}/promote`),
-                    )
-                  }
-                >
-                  🚀 Promocionar a proyecto
-                </button>
-              </div>
-              <Markdown text={idea.body} />
-            </div>
-          )}
-        </article>
-      ))}
-    </section>
+        </div>
+      </div>
+    </AppContext.Provider>
   );
 }
 
-function ProjectsView({ action, refreshKey }: ViewProps) {
-  const projects = useData(api.projects, refreshKey);
-  const [origin, setOrigin] = useState("");
-  const [open, setOpen] = useState<string | null>(null);
-  const [doc, setDoc] = useState("context");
-
+function VaultPanel({ vault }: { vault: VaultStatus | null }) {
+  const { action, busy } = useApp();
+  if (!vault) {
+    return (
+      <div className="vault-panel">
+        <Spinner small /> vault…
+      </div>
+    );
+  }
+  const synced = vault.is_git && vault.dirty_files === 0;
   return (
-    <section>
-      <form
-        className="toolbar"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (origin) action(`sync ${origin}`, () => api.post("/api/projects/sync", { origin }));
-        }}
-      >
-        <input
-          placeholder="ruta local o owner/repo de GitHub"
-          value={origin}
-          onChange={(e) => setOrigin(e.target.value)}
-        />
-        <button type="submit">🔄 Sync repo</button>
-      </form>
-      {!projects?.length && (
-        <p className="empty">Sin proyectos. Sincroniza un repo o promociona una idea.</p>
-      )}
-      {projects?.map((p: Project) => (
-        <article key={p.slug} className="card">
-          <div className="card-head" onClick={() => setOpen(open === p.slug ? null : p.slug)}>
-            <strong>{p.slug}</strong>
-            <span className="meta">
-              {p.repo ?? ""} · docs: {Object.keys(p.docs).join(", ")}
-            </span>
-          </div>
-          {open === p.slug && (
-            <div className="card-body">
-              <div className="actions">
-                {Object.keys(p.docs).map((d) => (
-                  <button key={d} className={doc === d ? "active" : ""} onClick={() => setDoc(d)}>
-                    {d}
-                  </button>
-                ))}
-              </div>
-              <Markdown text={p.docs[doc] ?? Object.values(p.docs)[0] ?? ""} />
-            </div>
-          )}
-        </article>
-      ))}
-    </section>
-  );
-}
-
-function PacksView({ action, refreshKey }: ViewProps) {
-  const packs = useData(api.packs, refreshKey);
-  const [task, setTask] = useState("");
-  const [open, setOpen] = useState<string | null>(null);
-
-  return (
-    <section>
-      <form
-        className="toolbar"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (task) action("pack create", () => api.post("/api/packs/create", { task }));
-        }}
-      >
-        <input
-          placeholder="describe la tarea para la que necesitas contexto"
-          value={task}
-          onChange={(e) => setTask(e.target.value)}
-        />
-        <button type="submit">📦 Crear pack</button>
-      </form>
-      {!packs?.length && <p className="empty">Sin packs todavía.</p>}
-      {packs?.map((pack: Pack) => (
-        <article key={pack.slug} className="card">
-          <div className="card-head" onClick={() => setOpen(open === pack.slug ? null : pack.slug)}>
-            <strong>{pack.title}</strong>
-            <span className="meta">{pack.task}</span>
-          </div>
-          {open === pack.slug && (
-            <div className="card-body">
-              <div className="actions">
-                <button onClick={() => navigator.clipboard.writeText(pack.body)}>
-                  📋 Copiar para el agente
-                </button>
-              </div>
-              <Markdown text={pack.body} />
-            </div>
-          )}
-        </article>
-      ))}
-    </section>
-  );
-}
-
-function ProfileView({ action, refreshKey }: ViewProps) {
-  const profile = useData(api.profile, refreshKey);
-  return (
-    <section>
-      <div className="toolbar">
-        <button onClick={() => action("profile infer", () => api.post("/api/profile/infer"))}>
-          🔍 Inferir perfil desde mis notas
-        </button>
-        <span className="meta">
-          Revisa cada sección en Obsidian y cambia status a "validated" cuando estés conforme.
+    <div className="vault-panel">
+      <div className="vault-row">
+        <span className={`sync-dot ${synced ? "ok" : vault.is_git ? "warn" : "off"}`} />
+        <span className="vault-state">
+          {!vault.is_git
+            ? "Vault sin repo git"
+            : synced
+              ? "Vault sincronizado"
+              : `${vault.dirty_files} cambio(s) sin sincronizar`}
         </span>
       </div>
-      {!profile?.length && <p className="empty">Sin perfil inferido todavía.</p>}
-      {profile?.map((s: ProfileSection) => (
-        <article key={s.section} className="card">
-          <div className="card-head">
-            <strong>{s.section}</strong>
-            <span className="meta">
-              status: {s.status ?? "—"} · confianza: {s.confidence ?? "—"}
-            </span>
+      {vault.is_git && (
+        <>
+          <div className="vault-meta">
+            <Badge tone="neutral" title={vault.last_commit?.message}>
+              {vault.branch} · {vault.last_commit?.sha ?? "—"}
+            </Badge>
           </div>
-          <div className="card-body">
-            <Markdown text={s.body} />
-          </div>
-        </article>
-      ))}
-    </section>
-  );
-}
-
-function RunsView({ refreshKey }: { refreshKey: number }) {
-  const runs = useData(api.runs, refreshKey);
-  return (
-    <section>
-      {!runs?.length && <p className="empty">Sin actividad todavía.</p>}
-      <table className="runs">
-        <tbody>
-          {runs?.map((r: Run) => (
-            <tr key={r.id} className={r.status}>
-              <td>{r.status === "ok" ? "✅" : r.status === "error" ? "❌" : "⏳"}</td>
-              <td>{r.pipeline}</td>
-              <td className="meta">{JSON.stringify(r.args)}</td>
-              <td className="meta">{new Date(r.started).toLocaleString()}</td>
-              <td className="meta">{r.error ?? r.outputs.join(", ")}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </section>
+          <div className="vault-meta">último sync: {timeAgo(vault.last_sync)}</div>
+          <button
+            className="btn small full"
+            disabled={!!busy}
+            onClick={() => action("sync del vault", () => api.post("/api/vault/sync"))}
+          >
+            ↑↓ Sincronizar ahora
+          </button>
+        </>
+      )}
+    </div>
   );
 }

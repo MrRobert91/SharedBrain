@@ -51,6 +51,19 @@ def test_replace_section_missing_appends():
     assert "## Nueva" in out
 
 
+def test_user_notes_append_and_get():
+    from sharedbrain.ideas import append_user_note, get_section
+
+    body, _ = render_idea(_card())
+    body = append_user_note(body, "Más pequeño.", "2026-06-12")
+    body = append_user_note(body, "Para Python.", "2026-06-13")
+    section = get_section(body, "Notas del usuario")
+    assert "_Añade aquí" not in section  # el placeholder desaparece
+    assert "**2026-06-12**: Más pequeño." in section
+    assert "**2026-06-13**: Para Python." in section
+    assert "## Veredicto" in body  # el resto de la ficha sobrevive
+
+
 def test_render_critique():
     crit = IdeaCritique(
         resumen="Buena pero grande.", demasiado_grande="Sí, acótala.",

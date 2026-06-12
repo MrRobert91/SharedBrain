@@ -12,3 +12,4 @@ sharedbrain.config.yaml
 node_modules/
 src/sharedbrain/static/
 data/
+*.tsbuildinfo

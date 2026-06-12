@@ -75,6 +75,7 @@ async def generate_ideas(
     *,
     goal: str | None = None,
     horizon: str | None = None,
+    custom_goal: str | None = None,
     from_note: str | None = None,
     n: int = 5,
 ) -> list[str]:
@@ -85,9 +86,13 @@ async def generate_ideas(
     criteria = []
     if goal:
         criteria.append(f"- Objetivo de las ideas: {goal}")
+    if custom_goal:
+        criteria.append(
+            f"- OBJETIVO ESPECÍFICO del usuario para esta tanda (prioritario): {custom_goal}"
+        )
     if horizon:
         criteria.append(f"- Horizonte: proyectos de plazo {horizon}")
-    query = " ".join(filter(None, [goal, horizon])) or "proyectos ideas objetivos"
+    query = " ".join(filter(None, [goal, custom_goal, horizon])) or "proyectos ideas objetivos"
     notes = relevant_notes(vault, query)
     base = ""
     if from_note:
@@ -141,6 +146,54 @@ async def critique_idea(config: Config, slug: str) -> str:
         verdict_sugerido=critique.verdict_sugerido,
     )
     abs_path.write_text(frontmatter.dumps(post) + "\n", encoding="utf-8")
+    return rel
+
+
+REBUILD_SYSTEM = """\
+Eres el refinador de ideas de SharedBrain. Recibes una ficha de idea, la
+crítica que recibió y, sobre todo, las NOTAS DEL USUARIO: feedback humano
+directo sobre cómo quiere reorientar la idea. Tu trabajo es regenerar la
+ficha completa incorporando ese feedback.
+
+Reglas:
+1. Las notas del usuario MANDAN: si contradicen la ficha original o la
+   crítica, gana el usuario.
+2. Conserva lo que el usuario no ha pedido cambiar; no reinventes porque sí.
+3. Mantén el anclaje en el perfil y cita sources reales.
+4. Reestima effort/impact/fit con honestidad tras los cambios.
+5. Escribe en español.
+"""
+
+
+async def rebuild_idea(config: Config, slug: str) -> str:
+    """Regenera la ficha incorporando las notas del usuario. Mantiene el slug
+    y conserva el historial de feedback."""
+    from ..ideas import USER_NOTES_HEADING, get_section
+
+    vault = Vault(config.vault, config.ai_dir)
+    ai_zone = AIZone(vault, default_model=config.models.default)
+    rel = f"{config.ai_dir}/ideas/{slug}.md"
+    note = vault.read(rel)
+    user_notes = get_section(note.body, USER_NOTES_HEADING)
+    if not user_notes or user_notes.startswith("_Añade aquí"):
+        raise RuntimeError(
+            "La idea no tiene notas del usuario; añade feedback antes de rebuildearla."
+        )
+
+    agent = _agent(config, IdeaCard, REBUILD_SYSTEM)
+    result = await agent.run(
+        f"## Perfil del usuario\n{profile_context(vault)}\n\n"
+        f"## Ficha actual (incluye crítica si existe)\n{note.body}\n\n"
+        f"## NOTAS DEL USUARIO (prioritarias)\n{user_notes}"
+    )
+    card = result.output
+    body, fm = render_idea(card)
+    # el historial de feedback se conserva en la ficha regenerada
+    body = replace_section(body, USER_NOTES_HEADING, user_notes)
+    ai_zone.create(
+        rel, body, type="idea", sources=card.sources, extra_frontmatter=fm,
+        overwrite=True, actor="pipeline:ideas.rebuild",
+    )
     return rel
 
 

@@ -21,6 +21,16 @@ from .vault import Vault, VaultError
 
 FRONTEND_DIST = Path(__file__).parent / "static"
 
+
+def _write_preserving_frontmatter(vault: Vault, rel: str, new_body: str) -> None:
+    """Reescribe el cuerpo de una nota conservando su frontmatter (acción humana)."""
+    import frontmatter as fm_lib
+
+    abs_path = vault.resolve(rel)
+    post = fm_lib.loads(abs_path.read_text(encoding="utf-8-sig"))
+    post.content = new_body
+    abs_path.write_text(fm_lib.dumps(post) + "\n", encoding="utf-8")
+
 # un pipeline LLM a la vez: evita ejecuciones duplicadas desde el panel
 _pipeline_lock = asyncio.Lock()
 
@@ -32,7 +42,17 @@ class TaskRequest(BaseModel):
 class GenerateRequest(BaseModel):
     goal: str | None = None
     horizon: str | None = None
+    custom_goal: str | None = None
     n: int = 5
+
+
+class FeedbackRequest(BaseModel):
+    text: str
+
+
+class VerdictRequest(BaseModel):
+    verdict: str | None = None
+    status: str | None = None
 
 
 class SyncRequest(BaseModel):
@@ -144,6 +164,93 @@ def build_app(config: Config) -> FastAPI:
     def api_runs() -> list[dict]:
         return runlog.recent()
 
+    @app.get("/api/vault/status")
+    def api_vault_status() -> dict:
+        from .gitsync import vault_status
+
+        status = vault_status(config)
+        last_sync = next(
+            (r for r in runlog.recent(200) if r["pipeline"] == "vault.sync" and r["status"] == "ok"),
+            None,
+        )
+        status["last_sync"] = last_sync["finished"] if last_sync else None
+        return status
+
+    @app.get("/api/vault/tree")
+    def api_vault_tree() -> list[dict]:
+        """Listado plano de notas (el árbol lo construye el frontend)."""
+        out = []
+        for note in vault.iter_notes("all"):
+            out.append({
+                "path": note.path,
+                "title": note.title,
+                "origin": note.origin,
+                "type": note.type,
+                "status": note.status,
+            })
+        return out
+
+    @app.get("/api/stats")
+    def api_stats() -> dict:
+        """Resumen del estado de notas, ideas y proyectos + sugerencias."""
+        human = ai = 0
+        for note in vault.iter_notes("all"):
+            if note.origin == "human":
+                human += 1
+            else:
+                ai += 1
+        from .ideas import get_section
+
+        ideas = list_idea_notes(vault)
+        by_verdict: dict[str, int] = {}
+        sin_critica = 0
+        for n in ideas:
+            v = str(n.frontmatter.get("verdict") or "sin-evaluar")
+            by_verdict[v] = by_verdict.get(v, 0) + 1
+            critica = get_section(n.body, "Crítica")
+            if not critica or critica.startswith("_Pendiente"):
+                sin_critica += 1
+        projects_dir = vault.ai_path / "projects"
+        n_projects = sum(1 for p in projects_dir.iterdir() if p.is_dir()) if projects_dir.is_dir() else 0
+        packs_dir = vault.ai_path / "packs"
+        n_packs = len(list(packs_dir.glob("*.md"))) if packs_dir.is_dir() else 0
+        profile_dir = vault.ai_path / "profile"
+        profile_sections = list(profile_dir.glob("*.md")) if profile_dir.is_dir() else []
+        profile_validated = sum(
+            1 for f in profile_sections
+            if vault.read(vault.relpath(f)).status == "validated"
+        )
+
+        suggestions: list[str] = []
+        if human == 0:
+            suggestions.append("El vault no tiene notas humanas: sincronízalo o añade notas.")
+        if not profile_sections:
+            suggestions.append("No hay perfil inferido. Ejecútalo desde la pestaña Perfil.")
+        elif profile_validated < len(profile_sections):
+            suggestions.append(
+                f"Perfil: {len(profile_sections) - profile_validated} sección(es) sin validar. "
+                "Revísalas y marca status: validated."
+            )
+        if not ideas:
+            suggestions.append("Aún no hay ideas. Genera la primera tanda desde Ideas.")
+        if sin_critica:
+            suggestions.append(f"{sin_critica} idea(s) sin crítica: pásalas por el sparring.")
+        pendientes = by_verdict.get("sin-evaluar", 0)
+        if pendientes:
+            suggestions.append(f"{pendientes} idea(s) sin veredicto tuyo: decide hacer/aparcar/descartar.")
+        hacer = by_verdict.get("hacer", 0)
+        if hacer and n_projects == 0:
+            suggestions.append("Tienes ideas en 'hacer' sin promocionar a proyecto.")
+
+        return {
+            "notes": {"human": human, "ai": ai},
+            "ideas": {"total": len(ideas), "by_verdict": by_verdict, "sin_critica": sin_critica},
+            "projects": n_projects,
+            "packs": n_packs,
+            "profile": {"sections": len(profile_sections), "validated": profile_validated},
+            "suggestions": suggestions,
+        }
+
     @app.get("/api/note")
     def api_note(path: str) -> dict:
         try:
@@ -166,7 +273,10 @@ def build_app(config: Config) -> FastAPI:
         from .pipelines.ideas import generate_ideas
         written = await _run(
             "ideas.generate", req.model_dump(),
-            generate_ideas(config, goal=req.goal, horizon=req.horizon, n=req.n),
+            generate_ideas(
+                config, goal=req.goal, horizon=req.horizon,
+                custom_goal=req.custom_goal, n=req.n,
+            ),
         )
         return {"written": written}
 
@@ -174,6 +284,49 @@ def build_app(config: Config) -> FastAPI:
     async def api_ideas_critique(slug: str) -> dict:
         from .pipelines.ideas import critique_idea
         written = await _run("ideas.critique", {"slug": slug}, critique_idea(config, slug))
+        return {"written": written}
+
+    @app.post("/api/ideas/{slug}/feedback")
+    def api_ideas_feedback(slug: str, req: FeedbackRequest) -> dict:
+        """Añade una nota del usuario a la ficha (feedback humano, sin LLM)."""
+        from datetime import date
+
+        from .ideas import append_user_note
+
+        rel = f"{config.ai_dir}/ideas/{slug}.md"
+        try:
+            note = vault.read(rel)
+        except VaultError as e:
+            raise HTTPException(404, str(e)) from e
+        new_body = append_user_note(note.body, req.text, date.today().isoformat())
+        _write_preserving_frontmatter(vault, rel, new_body)
+        return {"written": [rel]}
+
+    @app.patch("/api/ideas/{slug}")
+    def api_ideas_verdict(slug: str, req: VerdictRequest) -> dict:
+        """Acción humana desde el panel: fijar veredicto y/o estado de una idea."""
+        import frontmatter as fm_lib
+
+        rel = f"{config.ai_dir}/ideas/{slug}.md"
+        abs_path = vault.resolve(rel)
+        if not abs_path.is_file():
+            raise HTTPException(404, f"No existe la idea {slug}")
+        post = fm_lib.loads(abs_path.read_text(encoding="utf-8-sig"))
+        if req.verdict:
+            if req.verdict not in {"hacer", "reducir", "aparcar", "descartar", "sin-evaluar"}:
+                raise HTTPException(422, f"verdict inválido: {req.verdict}")
+            post.metadata["verdict"] = req.verdict
+        if req.status:
+            if req.status not in {"draft", "reviewed", "validated", "rejected"}:
+                raise HTTPException(422, f"status inválido: {req.status}")
+            post.metadata["status"] = req.status
+        abs_path.write_text(fm_lib.dumps(post) + "\n", encoding="utf-8")
+        return {"written": [rel]}
+
+    @app.post("/api/ideas/{slug}/rebuild")
+    async def api_ideas_rebuild(slug: str) -> dict:
+        from .pipelines.ideas import rebuild_idea
+        written = await _run("ideas.rebuild", {"slug": slug}, rebuild_idea(config, slug))
         return {"written": written}
 
     @app.post("/api/ideas/{slug}/promote")
@@ -192,14 +345,14 @@ def build_app(config: Config) -> FastAPI:
     async def api_vault_sync() -> dict:
         from .gitsync import GitSyncError, sync_vault
 
-        def _sync():
-            try:
-                return sync_vault(config)
-            except GitSyncError as e:
-                raise HTTPException(500, str(e)) from e
-
-        # git es bloqueante: fuera del event loop
-        actions = await asyncio.to_thread(_sync)
+        run_id = runlog.start("vault.sync", {})
+        try:
+            # git es bloqueante: fuera del event loop
+            actions = await asyncio.to_thread(sync_vault, config)
+        except GitSyncError as e:
+            runlog.fail(run_id, str(e))
+            raise HTTPException(500, str(e)) from e
+        runlog.finish(run_id, actions)
         return {"written": actions}
 
     @app.post("/api/projects/sync")
