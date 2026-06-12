@@ -28,6 +28,18 @@ def test_env_overrides_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     assert config.vault == tmp_path / "v"  # lo no-overrideado se respeta
 
 
+def test_openrouter_model_normalized(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("SHAREDBRAIN_VAULT", str(tmp_path / "vault"))
+    # id de OpenRouter sin prefijo de proveedor: se normaliza automáticamente
+    monkeypatch.setenv("SHAREDBRAIN_MODEL", "minimax/minimax-m3")
+    config = Config.load()
+    assert config.models.default == "openrouter:minimax/minimax-m3"
+    # los ids ya prefijados no se tocan
+    monkeypatch.setenv("SHAREDBRAIN_MODEL", "anthropic:claude-fable-5")
+    assert Config.load().models.default == "anthropic:claude-fable-5"
+
+
 def test_missing_everything_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("SHAREDBRAIN_VAULT", raising=False)

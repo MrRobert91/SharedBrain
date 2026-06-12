@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
 import os
 import secrets
 from pathlib import Path
@@ -20,6 +21,8 @@ from .runs import RunLog, tracked
 from .vault import Vault, VaultError
 
 FRONTEND_DIST = Path(__file__).parent / "static"
+
+logger = logging.getLogger("sharedbrain")
 
 
 def _write_preserving_frontmatter(vault: Vault, rel: str, new_body: str) -> None:
@@ -81,6 +84,8 @@ def build_app(config: Config) -> FastAPI:
 
         @app.middleware("http")
         async def basic_auth(request: Request, call_next):
+            if request.url.path == "/health":  # health checks de la plataforma
+                return await call_next(request)
             header = request.headers.get("authorization", "")
             ok = False
             if header.startswith("Basic "):
@@ -104,9 +109,15 @@ def build_app(config: Config) -> FastAPI:
             try:
                 return await tracked(runlog, pipeline, args, coro)
             except Exception as e:  # noqa: BLE001 — el panel necesita el motivo
+                # traceback completo a los logs del servidor (docker logs)
+                logger.exception("Pipeline %s falló (args=%s)", pipeline, args)
                 raise HTTPException(500, f"{type(e).__name__}: {e}") from e
 
     # --- lectura ---
+
+    @app.get("/health")
+    def health() -> dict:
+        return {"ok": True}
 
     @app.get("/api/profile")
     def api_profile() -> list[dict]:
@@ -243,6 +254,7 @@ def build_app(config: Config) -> FastAPI:
             suggestions.append("Tienes ideas en 'hacer' sin promocionar a proyecto.")
 
         return {
+            "model": config.models.default,
             "notes": {"human": human, "ai": ai},
             "ideas": {"total": len(ideas), "by_verdict": by_verdict, "sin_critica": sin_critica},
             "projects": n_projects,

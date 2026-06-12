@@ -53,3 +53,5 @@ def test_basic_auth_when_password_set(
         ok = c.get("/api/ideas", auth=("cualquiera", "secreta"))
         assert ok.status_code == 200
         assert c.get("/api/ideas", auth=("x", "mala")).status_code == 401
+        # /health queda exento para los health checks de la plataforma
+        assert c.get("/health").status_code == 200

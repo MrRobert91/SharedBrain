@@ -17,6 +17,15 @@ class ModelsConfig(BaseModel):
     default: str = "anthropic:claude-fable-5"
     cheap: str | None = None
 
+    @field_validator("default", "cheap", mode="before")
+    @classmethod
+    def _normalize_model(cls, v: object) -> object:
+        """Los ids de OpenRouter ("owner/modelo") suelen escribirse sin el
+        prefijo de proveedor; lo añadimos para no fallar con 'Unknown model'."""
+        if isinstance(v, str) and ":" not in v and "/" in v:
+            return f"openrouter:{v}"
+        return v
+
     def for_tier(self, tier: str) -> str:
         if tier == "cheap" and self.cheap:
             return self.cheap

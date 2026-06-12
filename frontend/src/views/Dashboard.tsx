@@ -13,7 +13,9 @@ export function Dashboard() {
   return (
     <section>
       <h2>Dashboard</h2>
-      <p className="section-hint">El estado de tu conocimiento, de un vistazo.</p>
+      <p className="section-hint">
+        El estado de tu conocimiento, de un vistazo. Modelo activo: <code>{stats.model}</code>
+      </p>
 
       <div className="stat-grid">
         <StatCard

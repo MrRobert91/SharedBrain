@@ -69,6 +69,7 @@ export interface Note {
 }
 
 export interface Stats {
+  model: string;
   notes: { human: number; ai: number };
   ideas: { total: number; by_verdict: Record<string, number>; sin_critica: number };
   projects: number;
