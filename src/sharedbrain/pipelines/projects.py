@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
-from pydantic_ai import Agent
 
 from ..ai_zone import AIZone
+from ..agents import build_agent
 from ..config import Config
 from ..ideas import slugify
 from ..repos import gather
@@ -76,7 +76,7 @@ async def sync_project(config: Config, origin: str, slug: str | None = None) -> 
     ai_zone = AIZone(vault, default_model=config.models.default)
     repo = gather(origin, slug)
 
-    agent = Agent(config.models.default, output_type=ProjectContext, system_prompt=SYNC_SYSTEM)
+    agent = build_agent(config.models.default, ProjectContext, SYNC_SYSTEM)
     result = await agent.run(
         f"## Perfil del usuario (para enfocar 'qué falta' e ideas)\n{profile_context(vault)}\n\n"
         f"## Contexto en bruto del repositorio\n{repo.dump()}"
@@ -103,7 +103,7 @@ async def promote_idea(config: Config, idea_slug: str) -> list[str]:
     idea_rel = f"{config.ai_dir}/ideas/{idea_slug}.md"
     idea = vault.read(idea_rel)
 
-    agent = Agent(config.models.default, output_type=ProjectSpec, system_prompt=PROMOTE_SYSTEM)
+    agent = build_agent(config.models.default, ProjectSpec, PROMOTE_SYSTEM)
     result = await agent.run(
         f"## Perfil del usuario\n{profile_context(vault)}\n\n"
         f"## Ficha de idea a promocionar\n{idea.body}"

@@ -12,7 +12,7 @@ license = { text = "MIT" }
 dependencies = [
     "fastmcp>=2.0",
     "pydantic>=2.7",
-    "pydantic-ai-slim[anthropic,openai]>=0.0.40",
+    "pydantic-ai-slim[anthropic,openai]>=1.0.0",
     "typer>=0.12",
     "python-frontmatter>=1.1",
     "PyYAML>=6.0",

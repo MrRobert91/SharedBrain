@@ -10,9 +10,9 @@ from __future__ import annotations
 from typing import Literal
 
 from pydantic import BaseModel, Field
-from pydantic_ai import Agent
 
 from ..ai_zone import AIZone, AIZoneError
+from ..agents import build_agent
 from ..config import Config
 from ..vault import Note, Vault
 
@@ -90,11 +90,7 @@ async def infer_profile(config: Config) -> list[str]:
     if not notes:
         raise RuntimeError("No hay notas humanas con contenido en el vault.")
 
-    agent = Agent(
-        config.models.default,
-        output_type=ProfileInference,
-        system_prompt=SYSTEM_PROMPT,
-    )
+    agent = build_agent(config.models.default, ProfileInference, SYSTEM_PROMPT)
     result = await agent.run(_build_prompt(notes))
 
     written: list[str] = []

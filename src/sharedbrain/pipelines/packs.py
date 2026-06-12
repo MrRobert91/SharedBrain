@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
-from pydantic_ai import Agent
 
 from ..ai_zone import AIZone
+from ..agents import build_agent
 from ..config import Config
 from ..ideas import slugify
 from ..vault import Vault
@@ -40,7 +40,7 @@ async def create_pack(config: Config, task: str) -> str:
     ai_zone = AIZone(vault, default_model=config.models.default)
     notes = relevant_notes(vault, task)
 
-    agent = Agent(config.models.default, output_type=Pack, system_prompt=PACK_SYSTEM)
+    agent = build_agent(config.models.default, Pack, PACK_SYSTEM)
     result = await agent.run(
         f"## Tarea\n{task}\n\n"
         f"## Perfil del usuario\n{profile_context(vault)}\n\n"

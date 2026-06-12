@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import frontmatter
 from pydantic import BaseModel, Field
-from pydantic_ai import Agent
 
 from ..ai_zone import AIZone
+from ..agents import build_agent
 from ..config import Config
 from ..ideas import (
     IdeaCard,
@@ -66,10 +66,6 @@ class Ranking(BaseModel):
     markdown: str = Field(description="Ranking razonado en Markdown: orden, por qué, y siguiente paso para la primera")
 
 
-def _agent(config: Config, output_type: type, system: str) -> Agent:
-    return Agent(config.models.default, output_type=output_type, system_prompt=system)
-
-
 async def generate_ideas(
     config: Config,
     *,
@@ -107,7 +103,7 @@ async def generate_ideas(
         f"## Encargo\nGenera como máximo {n} ideas de proyecto.\n"
         + "\n".join(criteria)
     )
-    result = await _agent(config, IdeaBatch, GENERATE_SYSTEM).run(prompt)
+    result = await build_agent(config.models.default, IdeaBatch, GENERATE_SYSTEM).run(prompt)
 
     written = []
     for card in result.output.ideas[:n]:
@@ -133,7 +129,7 @@ async def critique_idea(config: Config, slug: str) -> str:
         f"## Perfil del usuario\n{profile_context(vault)}\n\n"
         f"## Ficha de idea a criticar\n{note.body}"
     )
-    result = await _agent(config, IdeaCritique, CRITIQUE_SYSTEM).run(prompt)
+    result = await build_agent(config.models.default, IdeaCritique, CRITIQUE_SYSTEM).run(prompt)
     critique = result.output
 
     new_body = replace_section(note.body, "Crítica", render_critique(critique))
@@ -180,7 +176,7 @@ async def rebuild_idea(config: Config, slug: str) -> str:
             "La idea no tiene notas del usuario; añade feedback antes de rebuildearla."
         )
 
-    agent = _agent(config, IdeaCard, REBUILD_SYSTEM)
+    agent = build_agent(config.models.default, IdeaCard, REBUILD_SYSTEM)
     result = await agent.run(
         f"## Perfil del usuario\n{profile_context(vault)}\n\n"
         f"## Ficha actual (incluye crítica si existe)\n{note.body}\n\n"
@@ -213,7 +209,7 @@ async def compare_ideas(config: Config, slugs: list[str] | None = None) -> str:
         f"## Perfil del usuario\n{profile_context(vault)}\n\n"
         f"## Fichas de idea\n{fichas}\n\n## Encargo\nProduce el ranking razonado."
     )
-    result = await _agent(config, Ranking, COMPARE_SYSTEM).run(prompt)
+    result = await build_agent(config.models.default, Ranking, COMPARE_SYSTEM).run(prompt)
 
     rel = f"{config.ai_dir}/inbox/ranking-ideas.md"
     ai_zone.create(
