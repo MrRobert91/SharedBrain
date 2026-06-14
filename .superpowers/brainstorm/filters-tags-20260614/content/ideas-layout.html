@@ -1,0 +1,68 @@
+<h2>¿Cómo deberían organizarse los filtros de Ideas?</h2>
+<p class="subtitle">Ambas opciones permiten tags múltiples (OR), objetivo específico y rangos de creación/actualización.</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px;background:#11151d">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <strong>Ideas</strong><button class="mock-button">✦ Generar ideas</button>
+      </div>
+      <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px">
+        <span style="padding:5px 9px;border:1px solid #3b4354;border-radius:6px">Objetivo ▾</span>
+        <span style="padding:5px 9px;border:1px solid #3b4354;border-radius:6px">Horizonte ▾</span>
+        <span style="padding:5px 9px;border:1px solid #3b4354;border-radius:6px">Tags: agentes-ia ×</span>
+        <span style="padding:5px 9px;border:1px solid #6684ff;border-radius:6px;color:#9badff">Filtros avanzados (2)</span>
+      </div>
+      <div style="display:grid;grid-template-columns:34% 1fr;gap:10px">
+        <div class="placeholder" style="height:210px;text-align:left;padding:10px">
+          <strong>Curso de agentes</strong><br><small>educación · corto</small><br><br>
+          <strong>Kit de automatización</strong><br><small>monetización · medio</small>
+        </div>
+        <div class="placeholder" style="height:210px;text-align:left;padding:10px">
+          <strong>Curso de agentes</strong><br>
+          <small>Prompt: crear un producto educativo...</small><br><br>
+          <span style="border:1px solid #6684ff;border-radius:12px;padding:3px 8px">agentes-ia ×</span>
+          <span style="border:1px solid #6684ff;border-radius:12px;padding:3px 8px">python ×</span>
+          <span style="border:1px dashed #596174;border-radius:12px;padding:3px 8px">+ tag</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. Barra compacta + avanzados</h3>
+      <p>Mantiene despejada la vista. Fechas y objetivo específico se abren bajo “Filtros avanzados”.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px;background:#11151d">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <strong>Ideas</strong><button class="mock-button">✦ Generar ideas</button>
+      </div>
+      <div style="display:grid;grid-template-columns:190px 1fr;gap:10px">
+        <div class="placeholder" style="height:255px;text-align:left;padding:10px">
+          <strong>Filtros</strong><br><br>
+          <small>Objetivo</small><div style="border:1px solid #3b4354;padding:4px;margin:3px 0 8px">educación ▾</div>
+          <small>Objetivo específico</small><div style="border:1px solid #3b4354;padding:4px;margin:3px 0 8px">producto educativo</div>
+          <small>Tags (cualquiera)</small><div style="border:1px solid #3b4354;padding:4px;margin:3px 0 8px">agentes-ia ×</div>
+          <small>Creada</small><div style="border:1px solid #3b4354;padding:4px;margin-top:3px">desde — hasta</div>
+        </div>
+        <div class="placeholder" style="height:255px;text-align:left;padding:10px">
+          <strong>Curso de agentes</strong><br>
+          <small>Prompt: crear un producto educativo...</small><br><br>
+          <span style="border:1px solid #6684ff;border-radius:12px;padding:3px 8px">agentes-ia ×</span>
+          <span style="border:1px solid #6684ff;border-radius:12px;padding:3px 8px">python ×</span>
+          <span style="border:1px dashed #596174;border-radius:12px;padding:3px 8px">+ tag</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. Panel lateral persistente</h3>
+      <p>Todos los criterios están visibles, pero reduce el espacio disponible para la lista y la ficha.</p>
+    </div>
+  </div>
+</div>
+
+<div class="pros-cons">
+  <div class="pros"><h4>Recomendación</h4><ul><li>Opción A: encaja mejor con la estructura master-detail actual.</li><li>Los filtros activos permanecen visibles como chips.</li></ul></div>
+  <div class="cons"><h4>Consideración</h4><ul><li>La opción B resulta más rápida si se cambian rangos de fecha continuamente.</li></ul></div>
+</div>
